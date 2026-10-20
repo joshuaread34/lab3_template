@@ -57,3 +57,58 @@ class SnoutNetVGG16(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.backbone(x)
+
+
+if __name__ == "__main__":
+    from torchinfo import summary
+
+    print("SnoutNet summary:")
+    summary(SnoutNet(), input_size=(1, 3, 227, 227))
+
+    models = {
+        "SnoutNet": SnoutNet(),
+        "SnoutNetAlexNet": SnoutNetAlexNet(pretrained=False),
+        "SnoutNetVGG16": SnoutNetVGG16(pretrained=False),
+    }
+
+    x = torch.randn(1, 3, 227, 227)
+
+    for name, model in models.items():
+        model.eval()
+        with torch.no_grad():
+            output = model(x)
+
+        params = sum(p.numel() for p in model.parameters())
+        print(
+            f"{name}: output shape={tuple(output.shape)}, "
+            f"parameters={params:,}"
+        )
+
+    print("\nLoading provided checkpoints:")
+    checks = [
+        (SnoutNet(), "snoutnet.pth"),
+        (SnoutNetAlexNet(pretrained=False), "alexnet.pth"),
+        (SnoutNetVGG16(pretrained=False), "vgg16.pth"),
+    ]
+
+    for model, name in checks:
+        state = torch.load(
+            f"checkpoints/{name}",
+            map_location="cpu",
+            weights_only=True,
+        )
+        model.load_state_dict(state, strict=True)
+        print(f"Loaded {name}")
+
+    from utils.dataset import PetNoseDataset
+
+    model = checks[0][0]
+    dataset = PetNoseDataset(split="test")
+    model.eval()
+
+    image, label, orig_size = dataset[0]
+    with torch.no_grad():
+        pred = model(image.unsqueeze(0))[0]
+
+    print("Ground truth:", label / 227 * orig_size)
+    print("Prediction:  ", pred * orig_size)
