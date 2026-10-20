@@ -1,14 +1,3 @@
-"""
-ELEC 475: Lab 3 - Pet Nose Localization Dataset (Starter Template)
-Custom PyTorch Dataset for the oxford-iiit-pet-noses re-annotation of the
-Oxford-IIIT Pet Dataset.
-
-Each sample returns (image, label, orig_size):
-    image     : (3, 227, 227) float tensor, ImageNet-normalized
-    label     : (2,) float tensor, nose position (u, v) in the 227x227 image (pixels)
-                u = column (x), v = row (y)
-    orig_size : (2,) float tensor, original image (W, H)
-"""
 from pathlib import Path
 
 import torch
@@ -17,72 +6,99 @@ from torch.utils.data import Dataset
 import torchvision.transforms.functional as TF
 
 IMG_SIZE = 227
-
-# ImageNet channel statistics: required by the pretrained AlexNet/VGG16 backbones,
-# and used by the provided SnoutNet weights as well.
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 
 
 class PetNoseDataset(Dataset):
-    """
-    Loads pet images and nose labels, resized to (3, 227, 227).
+    def __init__(self, root="data/oxford-iiit-pet-noses", split="train"):
+        super().__init__()
 
-    Label file format (one sample per line):
-        beagle_145.jpg,"(198, 304)"
-    The ordered pair is (u, v) in pixels of the ORIGINAL image.
-    """
-    def __init__(self, root: str = "data/oxford-iiit-pet-noses", split: str = "train"):
-        super(PetNoseDataset, self).__init__()
-        self.img_dir = Path(root) / "images-original" / "images"
-        label_file = Path(root) / f"{split}_noses.txt"
+        if split not in ("train", "test"):
+            raise ValueError("split must be 'train' or 'test'")
 
-        # ======================================================================
-        # TODO [PRE-LAB TASK 3]: Parse the Label File
-        #
-        # Requirements:
-        #   1. Read every non-empty line of label_file
-        #   2. Split each line into the image file name and the "(u, v)" string
-        #   3. Strip the quotes and brackets, and convert u and v to float
-        #   4. Store the results in self.samples as a list of (name, u, v) tuples
-        # ======================================================================
+        root = Path(root)
+        self.img_dir = root / "images-original" / "images"
+        label_file = root / f"{split}_noses.txt"
+
         self.samples = []
 
-    def __len__(self) -> int:
+        # Each line looks like:
+        # shiba_inu_136.jpg,"(182, 203)"
+        with open(label_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                filename, coordinates = line.split(",", 1)
+                filename = filename.strip().strip('"')
+                coordinates = coordinates.strip().strip('"')
+                coordinates = coordinates.strip("()")
+
+                u_str, v_str = coordinates.split(",", 1)
+                u = float(u_str.strip())
+                v = float(v_str.strip())
+
+                self.samples.append((filename, u, v))
+
+    def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx: int):
-        # ======================================================================
-        # TODO [PRE-LAB TASK 3]: Load, Resize and Normalize One Sample
-        #
-        # Requirements:
-        #   1. Open the image with Image.open(path).convert("RGB")
-        #      (a few images are grayscale, palette or RGBA)
-        #   2. Record the original size: w, h = img.size  (PIL returns (W, H))
-        #   3. Resize with img.resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
-        #      (the provided weights were trained with exactly this resize)
-        #   4. Rescale the label: u * IMG_SIZE / w and v * IMG_SIZE / h
-        #   5. Convert with TF.to_tensor, then TF.normalize with MEAN and STD
-        #   6. Return (image, label, orig_size) as float32 tensors,
-        #      with label = [u, v] and orig_size = [w, h]
-        # ======================================================================
-        pass
+    def __getitem__(self, idx):
+        filename, u, v = self.samples[idx]
+
+        image_path = self.img_dir / filename
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            original_width, original_height = img.size
+
+            # Resize the image to 227 x 227.
+            img = img.resize(
+                (IMG_SIZE, IMG_SIZE),
+                Image.BILINEAR
+            )
+
+        # Scale the nose coordinates to match the resized image.
+        u_resized = u * IMG_SIZE / original_width
+        v_resized = v * IMG_SIZE / original_height
+
+        # Convert to a tensor and apply ImageNet normalization.
+        image = TF.to_tensor(img)
+        image = TF.normalize(image, mean=MEAN, std=STD)
+
+        label = torch.tensor(
+            [u_resized, v_resized],
+            dtype=torch.float32
+        )
+        orig_size = torch.tensor(
+            [original_width, original_height],
+            dtype=torch.float32
+        )
+
+        return image, label, orig_size
 
 
-def denormalize(img: torch.Tensor) -> torch.Tensor:
-    """Undo ImageNet normalization for display (returns values in [0, 1])."""
-    mean = torch.tensor(MEAN).view(3, 1, 1)
-    std = torch.tensor(STD).view(3, 1, 1)
+def denormalize(img):
+    """Reverse ImageNet normalization for visualization."""
+    mean = torch.tensor(MEAN, dtype=img.dtype, device=img.device)
+    std = torch.tensor(STD, dtype=img.dtype, device=img.device)
+
+    mean = mean.view(3, 1, 1)
+    std = std.view(3, 1, 1)
+
     return (img * std + mean).clamp(0, 1)
 
 
 if __name__ == "__main__":
-    print("Testing PetNoseDataset:")
-    try:
-        for split in ["train", "test"]:
-            ds = PetNoseDataset(split=split)
-            image, label, orig_size = ds[0]
-            print(f"  {split:5s}: {len(ds):,} samples | image {tuple(image.shape)} "
-                  f"| label {label.tolist()} | orig_size {orig_size.tolist()}")
-    except Exception as e:
-        print(f"Dataset not fully implemented yet: {e}")
+    root = "data/oxford-iiit-pet-noses"
+
+    for split in ("train", "test"):
+        dataset = PetNoseDataset(root=root, split=split)
+        print(f"{split}: {len(dataset)} samples")
+
+        if len(dataset) > 0:
+            image, label, orig_size = dataset[0]
+            print("  Image shape:", image.shape)
+            print("  Label:", label)
+            print("  Original size (W, H):", orig_size.tolist())
