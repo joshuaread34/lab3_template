@@ -1,0 +1,15 @@
+
+# Python environments and cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Large datasets and trained weights
+data/
+checkpoints/
+*.pth
+
+# Local configuration
+.ipynb_checkpoints/
+.env
