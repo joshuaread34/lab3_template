@@ -13,3 +13,10 @@ checkpoints/
 # Local configuration
 .ipynb_checkpoints/
 .env
+
+# Local lab data and generated outputs
+data/
+checkpoints/
+predictions/
+plots/
+*.pt
