@@ -27,25 +27,24 @@ MAX_OFFSET = 40               # largest training offset in u and v, in original-
 
 def extract_patch(img: Image.Image, center) -> Image.Image:
     """
-    Args:
-        img    : PIL RGB image, original size
-        center : (u, v) integer pixel coordinates of the patch centre.
-                 The centre may lie near or outside the image border.
-
-    Returns:
-        PIL RGB image, INPUT_SIZE x INPUT_SIZE: the PATCH_SIZE x PATCH_SIZE region
-        of img centred on center, resized with Image.BILINEAR. Any part of the
-        region outside the image is black.
+    Extract a PATCH_SIZE square around center and resize it to INPUT_SIZE.
+    Areas outside the original image are filled with black.
     """
-    # ======================================================================
-    # TODO [POST-LAB STEP 1]: Implement Patch Extraction
-    #
-    # Requirements:
-    #   1. Crop the PATCH_SIZE x PATCH_SIZE region centred on center with img.crop()
-    #      (img.crop() fills any part of the region outside the image with black)
-    #   2. Resize the region to (INPUT_SIZE, INPUT_SIZE) with Image.BILINEAR
-    # ======================================================================
-    pass
+    cx, cy = int(center[0]), int(center[1])
+    half = PATCH_SIZE // 2
+
+    left = cx - half
+    top = cy - half
+    right = left + PATCH_SIZE
+    bottom = top + PATCH_SIZE
+
+    patch = img.crop((left, top, right, bottom))
+    patch = patch.resize(
+        (INPUT_SIZE, INPUT_SIZE),
+        resample=Image.BILINEAR
+    )
+
+    return patch
 
 
 class CorrectionDataset(PetNoseDataset):
@@ -60,29 +59,42 @@ class CorrectionDataset(PetNoseDataset):
 
     def __getitem__(self, idx: int):
         """
-        Returns (patch, target):
-            patch  : torch.Tensor, shape (3, INPUT_SIZE, INPUT_SIZE), float,
-                     TF.normalize(TF.to_tensor(patch), MEAN, STD)
-            target : torch.Tensor, shape (2,), float. (du, dv) / HALF_PATCH, where (du, dv)
-                     is the offset from the patch centre to the true nose, in pixels
+        Returns a normalized image patch and the normalized nose offset.
         """
-        # ======================================================================
-        # TODO [POST-LAB STEP 1]: Implement Patch Sampling & Augmentation
-        #
-        # Requirements:
-        #   1. Get (name, u, v) from self.samples[idx]; open self.img_dir / name as RGB
-        #   2. Choose a random patch centre near the true nose: add a random offset,
-        #      uniform in [-MAX_OFFSET, MAX_OFFSET], to u and to v, then round to integers
-        #   3. Extract the patch centred on the patch centre with extract_patch(), and
-        #      compute (du, dv) = true nose - patch centre
-        #   4. If self.augment is True:
-        #        a. With probability 0.5, flip the patch horizontally
-        #           (patch.transpose(Image.FLIP_LEFT_RIGHT)) and update the target to match
-        #        b. Apply self.color_jitter to the patch, and update the target if needed
-        #   5. Return TF.normalize(TF.to_tensor(patch), MEAN, STD) and the
-        #      normalized target (du, dv) / HALF_PATCH
-        # ======================================================================
-        pass
+        name, u, v = self.samples[idx]
+
+        # Open the original image and ensure it is RGB.
+        with Image.open(self.img_dir / name if not isinstance(self.img_dir, str)
+                        else __import__("os").path.join(self.img_dir, name)) as source:
+            img = source.convert("RGB")
+
+        # Choose a random patch centre near the true nose.
+        cx = round(u + random.uniform(-MAX_OFFSET, MAX_OFFSET))
+        cy = round(v + random.uniform(-MAX_OFFSET, MAX_OFFSET))
+
+        # Offset from patch centre to the true nose, in original pixels.
+        du = float(u) - cx
+        dv = float(v) - cy
+
+        patch = extract_patch(img, (cx, cy))
+
+        if self.augment:
+            # Horizontal flipping reverses the horizontal offset.
+            if random.random() < 0.5:
+                patch = patch.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                du = -du
+
+            # Colour jitter changes appearance, not nose coordinates.
+            patch = self.color_jitter(patch)
+
+        patch = TF.normalize(TF.to_tensor(patch), MEAN, STD)
+        target = torch.tensor(
+            [du / HALF_PATCH, dv / HALF_PATCH],
+            dtype=torch.float32
+        )
+
+        return patch, target
+
 
 
 if __name__ == "__main__":

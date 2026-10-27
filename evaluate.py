@@ -21,7 +21,7 @@ MODEL_NAMES = {"snoutnet": "SnoutNet", "alexnet": "SnoutNet-A", "vgg16": "SnoutN
 # Post-Lab: first-stage predictions that correct.py corrects, and the correction model checkpoints
 CORRECTED_MODELS = {"snoutnet": "SnoutNet", "vgg16": "SnoutNet-V", "ensemble_mean": "Ensemble (mean)"}
 CORRECTIONS = {"correction_noaug": "+ corr.", "correction_aug": "+ corr. (aug)",
-               "correction_mod_noaug": "+ mod. corr.", "correction_mod_aug": "+ mod. corr. (aug)"}
+               "correction_modified_noaug": "+ mod. corr.", "correction_modified_aug": "+ mod. corr. (aug)"}
 
 _skipped = set()
 
